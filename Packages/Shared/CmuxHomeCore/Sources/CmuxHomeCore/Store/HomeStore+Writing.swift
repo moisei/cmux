@@ -39,7 +39,8 @@ extension HomeStore {
             // Cancelled or dropped while it waited.
             guard log.entries.contains(where: { $0.intent.key == key }), !stopped else { throw CancellationError() }
         }
-        return try await submit(intent)
+        // A vanished Chief DM's send moves to the live one while it waits (`afterInbox`).
+        return try await submit(log.entries.first { $0.intent.key == key }?.intent ?? intent)
     }
 
     /// Retries a "Not Delivered" send. A send that went to the owner and

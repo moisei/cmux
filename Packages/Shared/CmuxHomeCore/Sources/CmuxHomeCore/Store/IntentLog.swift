@@ -238,3 +238,25 @@ public struct IntentLog: Hashable, Sendable {
         change(&entries[index])
     }
 }
+
+// cx-ebm.55: HomeStore+ChiefRebind.swift moves a vanished Chief DM's sends.
+extension IntentLog {
+    /// Moves the text sends of `from` that the owner has not committed to
+    /// `to`, under their keys (they never reached `from`'s owner). A refused
+    /// one goes again (the owner refused only its conversation). Returns the
+    /// moved keys, in log order.
+    mutating func moveSends(from: ConversationID, to: ConversationID) -> [IdempotencyKey] {
+        var moved: [IdempotencyKey] = []
+        for index in entries.indices {
+            let entry = entries[index]
+            guard case .sendMessage(let conversation, let parts, _) = entry.intent.op, conversation == from,
+                  !entry.isUploading else { continue }
+            if case .acknowledged = entry.state { continue }
+            entries[index].intent = HomeIntent(key: entry.intent.key, op: .sendMessage(conversation: to, parts: parts, threadRoot: nil),
+                                               issuedAt: entry.intent.issuedAt)
+            if case .failed = entry.state { entries[index].state = .unconfirmed }
+            moved.append(entry.intent.key)
+        }
+        return moved
+    }
+}

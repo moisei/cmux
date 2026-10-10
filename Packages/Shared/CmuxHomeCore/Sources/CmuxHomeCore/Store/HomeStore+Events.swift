@@ -86,8 +86,10 @@ extension HomeStore {
                     await self.waitForTurn(next.key, in: conversation)
                     guard self.log.entries.contains(where: { $0.intent.key == next.key }), !self.stopped else { continue }
                 }
+                // A vanished Chief DM's send may have moved meanwhile (`afterInbox`).
+                let current = self.log.entries.first { $0.intent.key == next.key }?.intent ?? next
                 do {
-                    _ = try await self.submit(next)
+                    _ = try await self.submit(current)
                 } catch let rejection as HomeRejection {
                     // Nobody awaits a resend: the host hears of the refusal.
                     self.reportRefusal(next, rejection)
@@ -105,11 +107,12 @@ extension HomeStore {
             if state != .online {
                 log.markDisconnected()
                 pendingResends.removeAll()
+                resendsAwaitInbox = false
                 cancelBackoffs()
             }
             if state == .online, !wasOnline {
                 backoffAttempts.removeAll()
-                enqueueResends(log.takeResends())
+                resendAfterReconnect()
                 resumeInterruptedUploads()
                 for stream in mirror.stale { scheduleRefetch(stream) }
             }
@@ -134,10 +137,12 @@ extension HomeStore {
             typing[id] = set.isEmpty ? nil : set
             rebuildRows()
         default:
+            let previous = mirror.conversations
             let outcome = mirror.apply(event)
             switch event {
             case .inbox(let snapshot):
                 me = snapshot.me
+                afterInbox(previous: previous)
                 log.dropIntents(outside: Set(mirror.conversations.keys))
                 dropOrphanUploadJobs()
                 for stream in mirror.stale { scheduleRefetch(stream) }
@@ -176,8 +181,10 @@ extension HomeStore {
         refetching.insert(stream)
         defer { refetching.remove(stream) }
         guard let snapshot = try? await source.inbox() else { mirror.markStale(stream); return }
+        let previous = mirror.conversations
         let behind = mirror.apply(inbox: snapshot)
         me = snapshot.me
+        afterInbox(previous: previous)
         settle()
         rebuildRows()
         for next in behind { scheduleRefetch(next) }

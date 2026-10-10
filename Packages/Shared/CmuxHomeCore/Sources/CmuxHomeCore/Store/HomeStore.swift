@@ -36,6 +36,8 @@ public final class HomeStore {
     @ObservationIgnored private var eventTask: Task<Void, Never>?
     @ObservationIgnored var resendTask: Task<Void, Never>?
     @ObservationIgnored var pendingResends: [HomeIntent] = []
+    /// The reconnect resends wait for the owner's inbox (`resendAfterReconnect`).
+    @ObservationIgnored var resendsAwaitInbox = false
     @ObservationIgnored var refetching: Set<HomeStream> = []
     /// Which transcripts are on screen and the reads that fill them.
     @ObservationIgnored var pager = HomeTranscriptPager()
